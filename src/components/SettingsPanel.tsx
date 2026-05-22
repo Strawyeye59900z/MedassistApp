@@ -300,37 +300,77 @@ export default function SettingsPanel({ settings, onChangeSettings }: SettingsPa
 
       {/* Gemini API Key Section for personal use */}
       <div className="mt-5 p-4 rounded-xl bg-blue-50/40 border border-blue-100 shadow-inner">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex-1">
-            <h3 className="font-bold text-slate-800 text-xs uppercase tracking-tight flex items-center">
-              <Sparkles className="w-4 h-4 text-amber-500 mr-1.5 animate-pulse" />
-              Sua Chave de API do Gemini Pessoal
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-              Para transcrever exames, insira sua própria chave gerada gratuitamente no Google AI Studio. 
-              Sua chave é salva apenas localmente no seu navegador e não é compartilhada. Se você ainda não tem uma chave, acerte a sua em: {" "}
-              <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline">Google AI Studio</a>.
-            </p>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-blue-100/55 pb-3">
+            <div className="flex-1">
+              <h3 className="font-bold text-slate-800 text-xs uppercase tracking-tight flex items-center">
+                <Sparkles className="w-4 h-4 text-amber-500 mr-1.5 animate-pulse" />
+                Sua Chave de API do Gemini Pessoal
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                Para transcrever exames, insira sua própria chave gerada gratuitamente no Google AI Studio. 
+                Sua chave é salva apenas localmente no seu navegador e não é compartilhada. Se você ainda não tem uma chave, acerte a sua em: {" "}
+                <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline">Google AI Studio</a>.
+              </p>
+            </div>
+            <div className="w-full sm:w-80 shrink-0">
+              <input
+                id="input-settings-api-key"
+                type="password"
+                value={settings.geminiApiKey || ""}
+                onChange={(e) => updateSettings("geminiApiKey", e.target.value)}
+                placeholder="Cole sua API Key aqui (AIzaSy...)"
+                className="w-full text-xs font-mono px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-inner"
+              />
+              {settings.geminiApiKey ? (
+                <p className="text-[10px] text-emerald-600 font-bold mt-1.5 text-right flex items-center justify-end">
+                  <Check className="w-3.5 h-3.5 mr-1 text-emerald-500" />
+                  Chave configurada com sucesso
+                </p>
+              ) : (
+                <p className="text-[10px] text-rose-500 font-semibold mt-1.5 text-right">
+                  Chave obrigatória para o processamento
+                </p>
+              )}
+            </div>
           </div>
-          <div className="w-full sm:w-80 shrink-0">
-            <input
-              id="input-settings-api-key"
-              type="password"
-              value={settings.geminiApiKey || ""}
-              onChange={(e) => updateSettings("geminiApiKey", e.target.value)}
-              placeholder="Cole sua API Key aqui (AIzaSy...)"
-              className="w-full text-xs font-mono px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-inner"
-            />
-            {settings.geminiApiKey ? (
-              <p className="text-[10px] text-emerald-600 font-bold mt-1.5 text-right flex items-center justify-end">
-                <Check className="w-3.5 h-3.5 mr-1 text-emerald-500" />
-                Chave configurada com sucesso
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+            <div className="flex-1">
+              <h3 className="font-bold text-slate-800 text-xs uppercase tracking-tight flex items-center">
+                <Sparkles className="w-4 h-4 text-emerald-500 mr-1.5" />
+                Modelo da Inteligência Artificial (IA)
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                Selecione qual motor do Gemini deve processar suas transcrições de exames e prescrições do sistema. O Gemini 3.5 Flash é o modelo mais moderno e robusto, enquanto o 2.5 Flash oferece respostas rápidas.
               </p>
-            ) : (
-              <p className="text-[10px] text-rose-500 font-semibold mt-1.5 text-right">
-                Chave obrigatória para o processamento
-              </p>
-            )}
+            </div>
+            <div className="w-full sm:w-80 shrink-0 flex gap-2">
+              <button
+                type="button"
+                id="btn-model-35"
+                onClick={() => updateSettings("geminiModel", "gemini-3.5-flash")}
+                className={`flex-1 py-2 px-3 rounded-lg border text-xs font-bold text-center transition-all ${
+                  (settings.geminiModel || "gemini-3.5-flash") === "gemini-3.5-flash"
+                    ? themeStyles.btnActive + " font-extrabold"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                Gemini 3.5 Flash
+              </button>
+              <button
+                type="button"
+                id="btn-model-25"
+                onClick={() => updateSettings("geminiModel", "gemini-2.5-flash")}
+                className={`flex-1 py-2 px-3 rounded-lg border text-xs font-bold text-center transition-all ${
+                  settings.geminiModel === "gemini-2.5-flash"
+                    ? themeStyles.btnActive + " font-extrabold"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                Gemini 2.5 Flash
+              </button>
+            </div>
           </div>
         </div>
       </div>

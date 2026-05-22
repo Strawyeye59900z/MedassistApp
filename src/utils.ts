@@ -50,6 +50,7 @@ export function getDefaultSettings(): AppSettings {
     capsLock: false,
     theme: "dark-emerald",
     accentTone: "#10b981", // Emerald 500 default
+    geminiModel: "gemini-3.5-flash",
   };
 }
 

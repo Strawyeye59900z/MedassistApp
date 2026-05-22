@@ -425,6 +425,10 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   // Envia dados para a API do backend (PDF ou Texto)
   const startExtraction = async (base64Pdf?: string, rawText?: string) => {
     setProgressStep("Conectando com o servidor de IA...");
+    
+    // Calcula sistemas existentes para guiar a IA na consistência de categorização
+    const existingSystems = Array.from(new Set(prescriptions.map(p => formatSystemName(p.system))));
+
     try {
       if (!settings.geminiApiKey?.trim()) {
         throw new Error("Sua Chave de API do Gemini não está cadastrada. Por favor, adicione-a nas Configurações (ícone de engrenagem) ou insira no primeiro acesso.");
@@ -447,7 +451,11 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
               "Content-Type": "application/json",
               "X-Gemini-Key": settings.geminiApiKey || ""
             },
-            body: JSON.stringify({ rawText: chunkText })
+            body: JSON.stringify({ 
+              rawText: chunkText, 
+              model: settings.geminiModel, 
+              existingSystems 
+            })
           });
 
           if (!res.ok) {
@@ -475,7 +483,11 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
             "Content-Type": "application/json",
             "X-Gemini-Key": settings.geminiApiKey || ""
           },
-          body: JSON.stringify({ pdfBase64: base64Pdf })
+          body: JSON.stringify({ 
+            pdfBase64: base64Pdf, 
+            model: settings.geminiModel, 
+            existingSystems 
+          })
         });
 
         if (!res.ok) {
@@ -550,7 +562,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   const toggleSystemCollapse = (system: string) => {
     setCollapsedSystems(prev => ({
       ...prev,
-      [system]: !prev[system]
+      [system]: !(prev[system] ?? true)
     }));
   };
 
@@ -1016,8 +1028,8 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
       ) : (
         /* Bento Dashboard categorized lists of Systems */
         <div className="space-y-8 animate-fade-in">
-          {(Object.entries(groupedPrescriptions) as [string, Prescription[]][]).map(([system, items]) => {
-            const isCollapsed = !!collapsedSystems[system];
+          {(Object.entries(groupedPrescriptions).sort((a, b) => a[0].localeCompare(b[0])) as [string, Prescription[]][]).map(([system, items]) => {
+            const isCollapsed = collapsedSystems[system] ?? true;
             return (
               <div key={system} className="space-y-4">
                 {/* Clinical System header */}

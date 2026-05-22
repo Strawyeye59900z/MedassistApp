@@ -14,7 +14,7 @@ app.use(express.json({ limit: "15mb" }));
 // API endpoint for exames transcription
 app.post("/api/transcribe", async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, model } = req.body;
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "O texto do exame é obrigatório." });
     }
@@ -87,8 +87,10 @@ Texto bruto do exame:
 ${text}
 """`;
 
+    const chosenModel = (model === "gemini-2.5-flash" || model === "gemini-3.5-flash") ? model : "gemini-3.5-flash";
+
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: chosenModel,
       contents: userPrompt,
       config: {
         systemInstruction: systemPrompt,
@@ -191,7 +193,7 @@ ${text}
 // API endpoint for prescriptions PDF/text parsing with IA
 app.post("/api/parse-prescriptions", async (req, res) => {
   try {
-    const { pdfBase64, rawText } = req.body;
+    const { pdfBase64, rawText, model, existingSystems } = req.body;
     if (!pdfBase64 && !rawText) {
       return res.status(400).json({ error: "Você deve enviar um PDF em base64 ou um texto bruto para processamento." });
     }
@@ -214,17 +216,24 @@ app.post("/api/parse-prescriptions", async (req, res) => {
       }
     });
 
+    const systemsInstructions = Array.isArray(existingSystems) && existingSystems.length > 0 
+      ? `Diretrizes de Categorização:
+VOCÊ DEVE USAR APENAS AS SEGUINTES CATEGORIAS DE SISTEMAS SE A PRESCRIÇÃO SE ENCAIXAR NELAS: ${existingSystems.join(", ")}.
+SÓ CRIE UMA CATEGORIA NOVA SE NENHUMA DAS LISTADAS ACIMA FOR APROPRIADA. CASO A PRESCRIÇÃO SEJA SIMILAR OU PERTENÇA A UMA DESSAS, USE EXACTAMENTE O NOME FORNECIDO.`
+      : "Categorize as prescrições por SISTEMAS médicos (ex: 'Cardiovascular', 'Respiratório', 'Gastrointestinal', etc).";
+
     const systemInstruction = `Você é um robô de IA médica super especializado em organizar condutas, diretrizes e protocolos de emergência, UTI, pronto-socorro e enfermaria. Seu objetivo é ler um arquivo manual/diretrizes de prescrição médica em PDF ou em texto e extrair de forma 100% EXAUSTIVA e COMPLETA todas as prescrições médicas e condutas padronizadas encontradas no documento.
 
 ATENÇÃO: NÃO RESUMA DE FORMA ALGUMA. É CRÍTICO QUE ABSOLUTAMENTE TODAS AS PRESCRIÇÕES ENCONTRADAS SEJAM EXTRAÍDAS, INDEPENDENTEMENTE DE TEREM OU NÃO CONDIÇÕES, REGRAS CONDICIONAIS OU CONTRAINDICAÇÕES. 
 
 Diretrizes obrigatórias de processamento:
 1. EXAUSTIVIDADE TOTAL: Vasculhe o documento do início ao fim (todas as páginas e seções). Cada tema ou condição com uma conduta, dose de medicamento, soro, infusão, ou controle monitorado DEVE se tornar um elemento no array de retorno "prescriptions". Se o documento contiver 20 condutas separadas, você deve criar exatamente as 20 no array.
-2. Agrupamento por SISTEMAS: Classifique as prescrições por SISTEMAS médicos (ex: "Cardiovascular", "Respiratório", "Gastrointestinal", "Neurológico", "Infeccioso", "Nefrológico", "Hematológico", "Humores e Suplementos", "Endócrino", "Fórmulas", etc.).
-3. Identificação de CONDIÇÃO: Encontre o nome exato da patologia ou protocolo clínico para o campo "condition" (ex: "Cetoacidose Diabética", "Pneumonia Adquirida na Comunidade", "Profilaxia de TVP", "Delirium no Idoso").
-4. Mapeamento de CONDICIONAIS: Se houver fluxos alternativos, separe em sub-itens no campo "items" associando um "conditionGroup" claro (ex: "Se hipotensão", "Se febre (temp >= 37.8)", "Dose de ataque", "Dose de manutenção", "Instável", "Estável"). Se a conduta for de uso geral ou contínua sem condicionais explícitas, preencha obrigatoriamente o campo "conditionGroup" como "Medidas Gerais" ou "Rotina Padrão". Jamais deixe de extrair um item por falta de condicional!
-5. CONTRAINDICAÇÕES & SEGURANÇA: Extraia todas as precauções, restrições e contraindicações textuais do documento e insira no campo "contraindications". Caso o documento não mencione nenhuma contraindicação para aquela conduta específica, deixe o campo "contraindications" vazio ou com o texto "Sem contraindicações explícitas no documento".
-6. DETALHAMENTO DE ITENS: Cada medicamento, posologia, via de administração, tempo de infusão ou monitoração de enfermagem deve ser um item individualizado na lista "items", contendo sua respectiva conduta detalhada no campo "text".`;
+2. KERNEL DE ORGANIZAÇÃO (SISTEMAS): A quebra e organização inicial (parsing) deve seguir RIGOROSAMENTE as grandes SEÇÕES ou SISTEMAS do documento (tipicamente visíveis no sumário). ${systemsInstructions}. Use estes como o valor para o campo "system".
+3. Identificação de DOENÇA/PROCEDIMENTO: Dentro de cada sistema, identifique a patologia ou procedimento específico (ex: "Cetoacidose Diabética", "Pneumonia", "Profilaxia de TVP") e utilize-o para o campo "condition". Esta é a sua unidade de agrupamento dentro do sistema.
+4. ESTRUTURA DE ITENS POR DOENÇA: Você NÃO deve desmembrar os itens da prescrição (medicamentos, soros, exames, etc) item por item de forma isolada. Você deve AGRUPAR todos os itens clínicos e condutas que pertencem àquela DOENÇA/PROCEDIMENTO específica dentro do mesmo card/objeto.
+5. Mapeamento de CONDICIONAIS (conditionGroup): O campo \`conditionGroup\` deve servir APENAS para diferenciar estados condicionais do tratamento para a **mesma** doença (ex: "Se instável", "Se K < 3", "Se febre", "Fase 1: Ataque"). Se não houver variação condicional para o protocolo de tratamento, utilize "Rotina Padrão" ou "Medidas Gerais" como valor.
+6. CONTRAINDICAÇÕES & SEGURANÇA: Extraia todas as precauções, restrições e contraindicações textuais do documento e insira no campo "contraindications". Caso o documento não mencione nenhuma contraindicação para aquela conduta específica, deixe o campo "contraindications" vazio ou com o texto "Sem contraindicações explícitas no documento".
+7. DETALHAMENTO DE ITENS: Cada medicamento, posologia, via de administração, tempo de infusão ou monitoração de enfermagem deve fazer parte do array "items" daquela DOENÇA/PROCEDIMENTO, com a conduta detalhada no campo "text".`;
 
     // Prepare content parts
     const parts: any[] = [];
@@ -247,8 +256,10 @@ Diretrizes obrigatórias de processamento:
       });
     }
 
+    const chosenModel = (model === "gemini-2.5-flash" || model === "gemini-3.5-flash") ? model : "gemini-3.5-flash";
+
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: chosenModel,
       contents: { parts },
       config: {
         systemInstruction,

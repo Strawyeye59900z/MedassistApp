@@ -302,7 +302,7 @@ export default function App() {
           "Content-Type": "application/json",
           "X-Gemini-Key": settings.geminiApiKey || ""
         },
-        body: JSON.stringify({ text: textToAnalyze }),
+        body: JSON.stringify({ text: textToAnalyze, model: settings.geminiModel }),
       });
 
       clearInterval(interval);
@@ -438,42 +438,42 @@ export default function App() {
   const themeClasses = {
     hospital: {
       bg: "bg-slate-50",
-      text: "text-slate-800",
-      accent: "text-teal-600 bg-teal-50 border-teal-200",
-      primaryBtn: "bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/10",
-      focusRing: "focus:ring-teal-500 focus:border-teal-500",
-      accentBorder: "border-teal-500/30",
-      spinnerBorder: "border-t-teal-600",
-      testBtn: "text-teal-600 hover:text-teal-700 border-teal-150 bg-teal-50 hover:bg-teal-100/60",
-      card: "bg-white border-slate-200",
-      navBg: "bg-slate-200/50",
-      navActive: "bg-white text-blue-600 shadow-sm",
+      text: "text-slate-950",
+      accent: "text-teal-700 bg-teal-100 border-teal-300",
+      primaryBtn: "bg-teal-700 hover:bg-teal-800 text-white shadow-teal-500/20",
+      focusRing: "focus:ring-teal-600 focus:border-teal-600",
+      accentBorder: "border-teal-600/40",
+      spinnerBorder: "border-t-teal-700",
+      testBtn: "text-teal-800 hover:text-teal-900 border-teal-200 bg-teal-100 hover:bg-teal-200/60",
+      card: "bg-white border-slate-300",
+      navBg: "bg-slate-200/60",
+      navActive: "bg-white text-blue-800 shadow-md",
     },
     emerald: {
       bg: "bg-slate-50",
-      text: "text-slate-800",
-      accent: "text-emerald-600 bg-emerald-50 border-emerald-200",
-      primaryBtn: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/10",
-      focusRing: "focus:ring-emerald-500 focus:border-emerald-500",
-      accentBorder: "border-emerald-500/30",
-      spinnerBorder: "border-t-emerald-600",
-      testBtn: "text-emerald-600 hover:text-emerald-700 border-emerald-150 bg-emerald-50 hover:bg-emerald-100/60",
-      card: "bg-white border-slate-200",
-      navBg: "bg-slate-200/50",
-      navActive: "bg-white text-emerald-600 shadow-sm",
+      text: "text-slate-950",
+      accent: "text-emerald-700 bg-emerald-100 border-emerald-300",
+      primaryBtn: "bg-emerald-700 hover:bg-emerald-800 text-white shadow-emerald-500/20",
+      focusRing: "focus:ring-emerald-600 focus:border-emerald-600",
+      accentBorder: "border-emerald-600/40",
+      spinnerBorder: "border-t-emerald-700",
+      testBtn: "text-emerald-800 hover:text-emerald-900 border-emerald-200 bg-emerald-100 hover:bg-emerald-200/60",
+      card: "bg-white border-slate-300",
+      navBg: "bg-slate-200/60",
+      navActive: "bg-white text-emerald-800 shadow-md",
     },
     light: {
       bg: "bg-slate-50",
-      text: "text-slate-800",
-      accent: "text-blue-600 bg-blue-50 border-blue-200",
-      primaryBtn: "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/10",
-      focusRing: "focus:ring-blue-500 focus:border-blue-500",
-      accentBorder: "border-blue-500/30",
-      spinnerBorder: "border-t-blue-600",
-      testBtn: "text-blue-600 hover:text-blue-700 border-blue-150 bg-blue-50 hover:bg-blue-100/60",
-      card: "bg-white border-slate-200",
-      navBg: "bg-slate-200/50",
-      navActive: "bg-white text-blue-600 shadow-sm",
+      text: "text-slate-950",
+      accent: "text-blue-700 bg-blue-100 border-blue-300",
+      primaryBtn: "bg-blue-700 hover:bg-blue-800 text-white shadow-blue-500/20",
+      focusRing: "focus:ring-blue-600 focus:border-blue-600",
+      accentBorder: "border-blue-600/40",
+      spinnerBorder: "border-t-blue-700",
+      testBtn: "text-blue-800 hover:text-blue-900 border-blue-200 bg-blue-100 hover:bg-blue-200/60",
+      card: "bg-white border-slate-300",
+      navBg: "bg-slate-200/60",
+      navActive: "bg-white text-blue-800 shadow-md",
     },
     charcoal: {
       bg: "bg-slate-100",
@@ -516,16 +516,16 @@ export default function App() {
     }
   }[settings.theme] || {
     bg: "bg-slate-50",
-    text: "text-slate-800",
-    accent: "text-blue-600 bg-blue-50 border-blue-200",
-    primaryBtn: "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/10",
-    focusRing: "focus:ring-blue-500",
-    accentBorder: "border-blue-500/30",
-    spinnerBorder: "border-t-blue-600",
-    testBtn: "text-blue-600 hover:text-blue-700 border-blue-150 bg-blue-50 hover:bg-blue-100/60",
-    card: "bg-white border-slate-200",
-    navBg: "bg-slate-200/50",
-    navActive: "bg-white text-blue-600 shadow-sm",
+    text: "text-slate-950",
+    accent: "text-blue-700 bg-blue-100 border-blue-300",
+    primaryBtn: "bg-blue-700 hover:bg-blue-800 text-white shadow-blue-500/20",
+    focusRing: "focus:ring-blue-600 focus:border-blue-600",
+    accentBorder: "border-blue-600/40",
+    spinnerBorder: "border-t-blue-700",
+    testBtn: "text-blue-800 hover:text-blue-900 border-blue-200 bg-blue-100 hover:bg-blue-200/60",
+    card: "bg-white border-slate-300",
+    navBg: "bg-slate-200/60",
+    navActive: "bg-white text-blue-800 shadow-md",
   };
 
   // Auth Loading View
@@ -755,6 +755,7 @@ export default function App() {
         user={sessionUser}
         onLogout={handleLogout}
         theme={settings.theme}
+        geminiModel={settings.geminiModel}
       />
 
       {/* Main Container */}

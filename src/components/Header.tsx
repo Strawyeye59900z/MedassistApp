@@ -6,9 +6,10 @@ interface HeaderProps {
   user?: string;
   onLogout?: () => void;
   theme?: string;
+  geminiModel?: string;
 }
 
-export default function Header({ onOpenSettings, showSettings, user, onLogout, theme }: HeaderProps) {
+export default function Header({ onOpenSettings, showSettings, user, onLogout, theme, geminiModel }: HeaderProps) {
   const isDark = theme === "dark-emerald" || theme === "midnight";
   
   return (
@@ -23,7 +24,7 @@ export default function Header({ onOpenSettings, showSettings, user, onLogout, t
           </div>
           <div>
             <h1 className={`text-lg font-bold tracking-tight ${isDark ? "text-emerald-50" : "text-slate-800"}`}>
-              Medas<span className="text-emerald-500 font-semibold">sist</span>
+              Med<span className="text-emerald-500 font-semibold">assist</span>
             </h1>
             <p className={`text-[10px] uppercase tracking-widest font-semibold ${isDark ? "text-slate-500" : "text-slate-400"}`}>
               Auxiliar Hospitalar • <span className="opacity-70 font-medium">Gabriel Nuñez Costa</span>
@@ -37,7 +38,7 @@ export default function Header({ onOpenSettings, showSettings, user, onLogout, t
             isDark ? "bg-slate-900 border-slate-800 text-slate-500" : "bg-slate-50 border-slate-200 text-slate-500"
           }`}>
             <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-500 animate-pulse" />
-            Gemini 2.5 Flash
+            {geminiModel || "Gemini"}
           </div>
           
           {/* Settings Trigger */}

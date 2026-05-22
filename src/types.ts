@@ -38,6 +38,7 @@ export interface AppSettings {
   theme: "light" | "charcoal" | "hospital" | "emerald" | "dark-emerald" | "midnight";
   accentTone?: string; // Hex color or a class-related tone mapping
   geminiApiKey?: string;
+  geminiModel?: "gemini-3.5-flash" | "gemini-2.5-flash";
 }
 
 export interface Note {

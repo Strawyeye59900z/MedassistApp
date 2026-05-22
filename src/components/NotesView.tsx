@@ -174,7 +174,7 @@ export default function NotesView({ currentUser, settings, corrections = {} }: N
           "Content-Type": "application/json",
           "X-Gemini-Key": settings.geminiApiKey || ""
         },
-        body: JSON.stringify({ text: pastedExamText }),
+        body: JSON.stringify({ text: pastedExamText, model: settings.geminiModel }),
       });
 
       if (!response.ok) {
