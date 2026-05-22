@@ -5,6 +5,39 @@ import { db, handleFirestoreError, OperationType } from "../firebase";
 import { User } from "firebase/auth";
 import { Prescription, AppSettings } from "../types";
 
+// Limpa e padroniza os nomes dos sistemas (remove a palavra "sistema" do início)
+const formatSystemName = (sys: string): string => {
+  let s = (sys || "Geral").trim();
+  s = s.replace(/^sistema\s+/i, "");
+  if (s.length > 0) {
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  return s;
+};
+
+// Divide strings longas em blocos preservando quebras de linha
+const splitTextIntoChunks = (text: string, maxChars = 8000): string[] => {
+  if (text.length <= maxChars) {
+    return [text];
+  }
+  const lines = text.split("\n");
+  const chunks: string[] = [];
+  let currentChunk = "";
+  
+  for (const line of lines) {
+    if ((currentChunk + "\n" + line).length > maxChars && currentChunk.trim().length > 0) {
+      chunks.push(currentChunk);
+      currentChunk = line;
+    } else {
+      currentChunk = currentChunk ? currentChunk + "\n" + line : line;
+    }
+  }
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk);
+  }
+  return chunks;
+};
+
 interface PrescriptionsViewProps {
   currentUser: User | null;
   settings: AppSettings;
@@ -234,7 +267,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
     const groups = new Set<string>(["Medidas Gerais", "Instável", "Estável", "Refratário", "Manutenção", "Urgência"]);
 
     prescriptions.forEach(p => {
-      if (p.system) systems.add(p.system);
+      if (p.system) systems.add(formatSystemName(p.system));
       if (p.condition) conditions.add(p.condition);
       p.items.forEach(it => {
         if (it.conditionGroup) groups.add(it.conditionGroup);
@@ -397,39 +430,77 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
         throw new Error("Sua Chave de API do Gemini não está cadastrada. Por favor, adicione-a nas Configurações (ícone de engrenagem) ou insira no primeiro acesso.");
       }
 
+      let aggregatedPrescriptions: any[] = [];
+
       if (rawText) {
-        setProgressStep("Gemini estruturando as informações clínicas e medicamentos (15 a 30 segundos)...");
-      } else {
-        setProgressStep("Gemini realizando leitura do PDF clínico (para PDFs grandes, isso pode levar de 20 a 50 segundos)...");
-      }
+        // Divide o texto de forma limpa em blocos/blocos de até 8000 caracteres para análise integral livre de Timeout!
+        const chunks = splitTextIntoChunks(rawText, 8000);
+        const totalChunks = chunks.length;
 
-      const res = await fetch("/api/parse-prescriptions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Gemini-Key": settings.geminiApiKey || ""
-        },
-        body: JSON.stringify({ pdfBase64: base64Pdf, rawText })
-      });
+        for (let i = 0; i < totalChunks; i++) {
+          setProgressStep(`Análise Integral: Processando bloco ${i + 1} de ${totalChunks} com a IA (${Math.round((i / totalChunks) * 100)}% concluído)...`);
+          const chunkText = chunks[i];
 
-      if (!res.ok) {
-        // Trata timeout do Cloudflare 524 de forma amigável
-        if (res.status === 524) {
-          throw new Error("Erro de limite de tempo (Cloudflare Timeout 524). O PDF enviado é muito grande ou denso, fazendo com que a análise completa da IA demore mais de 100 segundos. Para resolver, clique no botão 'Importar via Texto' abaixo e cole apenas as condutas principais, ou divida o PDF em arquivos menores (com no máximo 2 a 3 páginas).");
+          const res = await fetch("/api/parse-prescriptions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Gemini-Key": settings.geminiApiKey || ""
+            },
+            body: JSON.stringify({ rawText: chunkText })
+          });
+
+          if (!res.ok) {
+            if (res.status === 524) {
+              throw new Error(`Erro de limite de tempo (Cloudflare Timeout) no bloco ${i + 1} de ${totalChunks}. Divida o texto inserido em partes ainda menores.`);
+            }
+            if (res.status === 413) {
+              throw new Error(`Erro de arquivo muito pesado (Payload Too Large 413) no bloco ${i + 1}.`);
+            }
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `Erro de resposta do servidor (${res.status}) no bloco ${i + 1}.`);
+          }
+
+          const result = await res.json();
+          if (result.prescriptions && Array.isArray(result.prescriptions)) {
+            aggregatedPrescriptions = [...aggregatedPrescriptions, ...result.prescriptions];
+          }
         }
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Erro de resposta do servidor (${res.status}).`);
+      } else if (base64Pdf) {
+        // Envia base64 integral para o PDF escaneado (sem texto copiável direto)
+        setProgressStep("Análise integral: processando imagem do PDF clínico na IA... Isso pode levar de 30 a 60 segundos.");
+        const res = await fetch("/api/parse-prescriptions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Gemini-Key": settings.geminiApiKey || ""
+          },
+          body: JSON.stringify({ pdfBase64: base64Pdf })
+        });
+
+        if (!res.ok) {
+          if (res.status === 524) {
+            throw new Error("Erro de limite de tempo (Cloudflare Timeout 524). O PDF escaneado é denso demais para processamento em bloco único. Copie o texto de dentro do documento e cole na aba 'Copiar e Colar Texto' para processar de forma 100% fracionada, integral e segura!");
+          }
+          if (res.status === 413) {
+            throw new Error("Erro: Arquivo muito pesado (Payload Too Large - Erro 413). Selecione a aba 'Copiar e Colar Texto' acima, copie o texto do PDF e cole-o diretamente no campo de texto para evitar limites!");
+          }
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Erro de resposta do servidor (${res.status}).`);
+        }
+
+        const result = await res.json();
+        if (result.prescriptions && Array.isArray(result.prescriptions)) {
+          aggregatedPrescriptions = result.prescriptions;
+        }
       }
 
-      setProgressStep("Recebendo dados organizados da IA...");
-      const result = await res.json();
-
-      if (!result.prescriptions || !Array.isArray(result.prescriptions)) {
-        throw new Error("A IA retornou um formato inesperado. Tente novamente com outro PDF ou texto de condutas claras.");
+      if (aggregatedPrescriptions.length === 0) {
+        throw new Error("Nenhuma prescrição elegível pôde ser estruturada a partir deste bloco. Verifique se o texto ou arquivo possui protocolos claros e tente novamente.");
       }
 
-      setProgressStep(`Salvando ${result.prescriptions.length} condutas processadas no Firestore seguro...`);
-      await saveParsedPrescriptions(result.prescriptions);
+      setProgressStep(`Salvando ${aggregatedPrescriptions.length} condutas integradas de todos os blocos no Firestore seguro...`);
+      await saveParsedPrescriptions(aggregatedPrescriptions);
 
       setProgressStep("Concluído!");
       setIsProcessing(false);
@@ -459,7 +530,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
 
         const typedItem: Prescription = {
           id: docId,
-          system: (item.system || "Geral").trim(),
+          system: formatSystemName(item.system || "Geral"),
           condition: (item.condition || "Condição não especificada").trim(),
           title: (item.title || "Prescrição").trim(),
           items: formattedItems,
@@ -600,7 +671,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
         const docRef = doc(db, "users", currentUser.uid, "prescriptions", editingPrescription.id);
         await updateDoc(docRef, {
           ...formState,
-          system: formState.system.trim(),
+          system: formatSystemName(formState.system),
           condition: formState.condition.trim(),
           title: formState.title.trim(),
           contraindications: formState.contraindications.trim(),
@@ -616,7 +687,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
         const newPrescription: Prescription = {
           id: docId,
           timestamp: new Date().toISOString(),
-          system: formState.system.trim(),
+          system: formatSystemName(formState.system),
           condition: formState.condition.trim(),
           title: formState.title.trim(),
           contraindications: formState.contraindications.trim(),
@@ -690,7 +761,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   const groupedPrescriptions = useMemo(() => {
     const groups: Record<string, Prescription[]> = {};
     filteredPrescriptions.forEach((p) => {
-      const key = p.system || "Outros";
+      const key = formatSystemName(p.system || "Outros");
       if (!groups[key]) {
         groups[key] = [];
       }
@@ -957,7 +1028,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
                   <div className="flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     <h2 className={`text-sm font-bold uppercase tracking-wider font-mono ${themeClasses.text}`}>
-                      Sistema {system}
+                      {system}
                     </h2>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isDark ? "bg-slate-800 text-slate-400" : "bg-slate-100/80 text-slate-500"}`}>
                       {items.length} {items.length === 1 ? "conduta" : "condutas"}

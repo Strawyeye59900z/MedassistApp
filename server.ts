@@ -172,7 +172,9 @@ ${text}
     let userFriendlyMessage = "Erro desconhecido ao processar o exame.";
     const errorStr = (error.message || "") + " " + JSON.stringify(error);
     
-    if (errorStr.includes("503") || errorStr.includes("UNAVAILABLE") || errorStr.includes("high demand") || errorStr.includes("temporarily unavailable")) {
+    if (errorStr.includes("expired") || errorStr.includes("renew") || errorStr.includes("API key expired")) {
+      userFriendlyMessage = "Sua chave de API do Gemini compartilhada ou configurada expirou. Por favor, acesse o Google AI Studio (https://aistudio.google.com/), gere uma nova chave de API gratuita, e cole-a no painel de Configurações (ícone de engrenagem no canto superior direito) para continuar usando a IA.";
+    } else if (errorStr.includes("503") || errorStr.includes("UNAVAILABLE") || errorStr.includes("high demand") || errorStr.includes("temporarily unavailable")) {
       userFriendlyMessage = "O serviço de inteligência artificial de alta velocidade do Gemini está temporariamente sobrecarregado (Erro 503: Alta Demanda). Isso é comum em momentos de pico de uso global da infraestrutura do Google. Por favor, aguarde cerca de 10 a 20 segundos e tente transcrever novamente. Se o erro persistir, recomendamos cadastrar sua própria chave de API exclusiva e gratuita do Gemini na engrenagem de configurações no canto superior direito.";
     } else if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota") || errorStr.includes("limit")) {
       userFriendlyMessage = "Limite de requisições excedido (Erro 429: Cota de IA atingida). Por favor, aguarde 1 minuto e tente novamente. Se estiver usando a chave compartilhada, recomendamos enfaticamente cadastrar sua própria chave de API gratuita do Gemini nas configurações (ícone de engrenagem) para obter uma cota individual exclusiva e livre de filas.";
@@ -289,7 +291,23 @@ Diretrizes obrigatórias de processamento:
     res.json(parsedData);
   } catch (error: any) {
     console.error("Erro no processamento das prescrições:", error);
-    res.status(500).json({ error: error.message || "Erro desconhecido ao processar prescrições com IA." });
+    
+    let userFriendlyMessage = "Erro desconhecido ao processar prescrições com IA.";
+    const errorStr = (error.message || "") + " " + JSON.stringify(error);
+    
+    if (errorStr.includes("expired") || errorStr.includes("renew") || errorStr.includes("API key expired")) {
+      userFriendlyMessage = "Sua chave de API do Gemini compartilhada ou configurada expirou. Por favor, acesse o Google AI Studio (https://aistudio.google.com/), gere uma nova chave de API gratuita, e cole-a no painel de Configurações (ícone de engrenagem no canto superior direito) para continuar usando a IA.";
+    } else if (errorStr.includes("503") || errorStr.includes("UNAVAILABLE") || errorStr.includes("high demand") || errorStr.includes("temporarily unavailable")) {
+      userFriendlyMessage = "O serviço de inteligência artificial de alta velocidade do Gemini está temporariamente sobrecarregado (Erro 503: Alta Demanda). Isso é comum em momentos de pico de uso global da infraestrutura do Google. Por favor, aguarde cerca de 10 a 20 segundos e tente transcrever novamente. Se o erro persistir, recomendamos cadastrar sua própria chave de API exclusiva e gratuita do Gemini na engrenagem de configurações no canto superior direito.";
+    } else if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota") || errorStr.includes("limit")) {
+      userFriendlyMessage = "Limite de requisições excedido (Erro 429: Cota de IA atingida). Por favor, aguarde 1 minuto e tente novamente. Se estiver usando a chave compartilhada, recomendamos enfaticamente cadastrar sua própria chave de API gratuita do Gemini nas configurações (ícone de engrenagem) para obter uma cota individual exclusiva e livre de filas.";
+    } else if (errorStr.includes("API key not valid") || errorStr.includes("INVALID_ARGUMENT") || errorStr.includes("API_KEY_INVALID") || errorStr.includes("key is invalid")) {
+      userFriendlyMessage = "A chave de API do Gemini informada é inválida ou expirou. Por favor, verifique suas credenciais em seu painel do Google AI Studio, atualize sua chave no painel de Configurações (ícone de engrenagem) e tente novamente.";
+    } else if (error.message) {
+      userFriendlyMessage = error.message;
+    }
+    
+    res.status(500).json({ error: userFriendlyMessage });
   }
 });
 
