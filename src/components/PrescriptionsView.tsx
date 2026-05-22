@@ -274,7 +274,51 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Função para ler arquivo PDF e converter em Base64
+  // Carrega dinamicamente a biblioteca oficial PDF.js para extrair texto direto no cliente
+  const loadPdfJs = (): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).pdfjsLib) {
+        resolve((window as any).pdfjsLib);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
+      script.onload = () => {
+        const pdfjsLib = (window as any).pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+        resolve(pdfjsLib);
+      };
+      script.onerror = () => reject(new Error("Não foi possível carregar a biblioteca de leitura de PDF (CDN indisponível)."));
+      document.head.appendChild(script);
+    });
+  };
+
+  // Extrai o texto do PDF usando PDF.js no navegador
+  const extractTextFromPdf = async (arrayBuffer: ArrayBuffer, onProgress: (step: string) => void): Promise<string> => {
+    onProgress("Carregando motor de leitura PDF no seu navegador...");
+    const pdfjsLib = await loadPdfJs();
+    
+    onProgress("Iniciando varredura rápida de texto do PDF...");
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    
+    let fullText = "";
+    const numPages = pdf.numPages;
+    
+    for (let i = 1; i <= numPages; i++) {
+      onProgress(`Extraindo texto localmente: página ${i} de ${numPages}...`);
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += `--- PÁGINA ${i} ---\n${pageText}\n\n`;
+    }
+    
+    return fullText;
+  };
+
+  // Função para ler arquivo PDF, tentar extrair texto no front-end, ou enviar Base64 se escaneado
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     setUploadError(null);
@@ -294,26 +338,55 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
     }
 
     setIsProcessing(true);
-    setProgressStep("Preparando arquivo PDF...");
+    setProgressStep("Carregando arquivo PDF...");
 
-    const reader = new FileReader();
-    reader.onload = async () => {
+    const fileReader = new FileReader();
+    fileReader.onload = async () => {
       try {
-        const base64Content = (reader.result as string).split(",")[1];
-        if (!base64Content) {
-          throw new Error("Não foi possível carregar os binários do PDF.");
+        const arrayBuffer = fileReader.result as ArrayBuffer;
+        
+        // Tenta extrair o texto diretamente no navegador
+        let extractedText = "";
+        try {
+          extractedText = await extractTextFromPdf(arrayBuffer, setProgressStep);
+        } catch (scanErr) {
+          console.warn("Falha ao extrair texto local do PDF, tentando envio direto de imagem:", scanErr);
         }
-        await startExtraction(base64Content);
+
+        if (extractedText && extractedText.trim().length > 150) {
+          // Extração com sucesso do texto digitado! Envia apenas o texto (Vantagem: sem limite de 413, sem timeout de 524)
+          console.log("Texto extraído com sucesso no cliente. Tamanho:", extractedText.length);
+          await startExtraction(undefined, extractedText);
+        } else {
+          // O PDF parece ser imagem pura / escaneada ou houve erro na extração. Enviamos o PDF como base64.
+          console.log("PDF parece ser escaneado (sem texto selecionável). Enviando base64 completo...");
+          setProgressStep("PDF escaneado detectado. Convertendo para imagem/base64...");
+          
+          const base64Reader = new FileReader();
+          base64Reader.onload = async () => {
+            try {
+              const base64Content = (base64Reader.result as string).split(",")[1];
+              if (!base64Content) {
+                throw new Error("Não foi possível carregar os binários do PDF.");
+              }
+              await startExtraction(base64Content);
+            } catch (err: any) {
+              setUploadError(err.message || "Falha ao processar imagem do PDF.");
+              setIsProcessing(false);
+            }
+          };
+          base64Reader.readAsDataURL(file);
+        }
       } catch (err: any) {
-        setUploadError(err.message || "Falha ao transformar PDF em binário.");
+        setUploadError(err.message || "Falha ao analisar o PDF.");
         setIsProcessing(false);
       }
     };
-    reader.onerror = () => {
+    fileReader.onerror = () => {
       setUploadError("Erro na leitura do arquivo local.");
       setIsProcessing(false);
     };
-    reader.readAsDataURL(file);
+    fileReader.readAsArrayBuffer(file);
   };
 
   // Envia dados para a API do backend (PDF ou Texto)
