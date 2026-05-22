@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, useRef } from "react";
 import { AppSettings, TranscriptionResponse, HistoryItem, Prescription, Correction } from "./types";
 import { CLINICAL_MOCK_EXAM_TEXT, getDefaultSettings, formatAllExams } from "./utils";
 import Header from "./components/Header";
@@ -23,6 +23,7 @@ import {
 import { doc, getDoc, setDoc, collection, onSnapshot, query, orderBy, deleteDoc } from "firebase/firestore";
 
 export default function App() {
+  const isRegisteringRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"exames" | "notas" | "prescricoes" | "admin">("exames");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -71,24 +72,31 @@ export default function App() {
 
         try {
           const regRef = doc(db, "users_registered", user.uid);
-          const regSnap = await getDoc(regRef);
+          let regSnap = await getDoc(regRef);
 
-          if (!regSnap.exists() && !isAdmin) {
-            setAuthError("Esta conta foi desativada ou excluída pelo administrador.");
-            await signOut(auth);
-            setCurrentUser(null);
-            setSessionUser(null);
-            setIsAuthLoading(false);
-            return;
-          }
+          // Detect newly created auth account to bypass local race conditions
+          const isNewUser = user.metadata.creationTime && user.metadata.lastSignInTime && 
+                            (user.metadata.creationTime === user.metadata.lastSignInTime || 
+                             Math.abs(new Date(user.metadata.creationTime).getTime() - new Date(user.metadata.lastSignInTime).getTime()) < 15000);
 
-          // Ensure admin is registered in DB as well
-          if (isAdmin && !regSnap.exists()) {
-            await setDoc(regRef, {
-              uid: user.uid,
-              email: user.email,
-              createdAt: new Date().toISOString()
-            });
+          if (!regSnap.exists()) {
+            if (isAdmin || isRegisteringRef.current || isNewUser) {
+              // Atomically create registration record on the database
+              await setDoc(regRef, {
+                uid: user.uid,
+                email: user.email || "",
+                createdAt: new Date().toISOString()
+              });
+              regSnap = await getDoc(regRef);
+              isRegisteringRef.current = false;
+            } else {
+              setAuthError("Esta conta foi desativada ou excluída pelo administrador.");
+              await signOut(auth);
+              setCurrentUser(null);
+              setSessionUser(null);
+              setIsAuthLoading(false);
+              return;
+            }
           }
 
           setCurrentUser(user);
@@ -99,7 +107,8 @@ export default function App() {
           }
         } catch (err: any) {
           console.error("Erro ao validar registro do usuario:", err);
-          setAuthError("Erro de integridade ao verificar o cadastro no sistema.");
+          const errorMsg = err.message || err.code || String(err);
+          setAuthError(`Erro de integridade ao verificar o cadastro no sistema. Detalhes: ${errorMsg}`);
           await signOut(auth);
           setCurrentUser(null);
           setSessionUser(null);
@@ -554,13 +563,14 @@ export default function App() {
       try {
         if (isSignUp) {
           // Cadastro
+          isRegisteringRef.current = true;
           const res = await createUserWithEmailAndPassword(auth, emailValue, passwordValue);
           if (res.user) {
             // Write to registered users directory
             const regRef = doc(db, "users_registered", res.user.uid);
             await setDoc(regRef, {
               uid: res.user.uid,
-              email: res.user.email,
+              email: res.user.email || "",
               createdAt: new Date().toISOString()
             });
           }
