@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isOwnerOrAdmin(userId) {
+      return isSignedIn() && (request.auth.uid == userId || request.auth.token.email == "gabriel.nunez.costa@gmail.com");
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Registered Users Directory (for Admin & self check)
+    match /users_registered/{userId} {
+      allow get, create: if isSignedIn();
+      allow list, update, delete: if isSignedIn() && (request.auth.uid == userId || request.auth.token.email == "gabriel.nunez.costa@gmail.com");
+    }
+
+    // User settings and data
+    match /users/{userId} {
+      allow get, create, update: if isOwnerOrAdmin(userId);
+
+      // History of transcriptions
+      match /history/{historyId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+
+      // Clinical notes
+      match /notes/{noteId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+
+      // Clinical protocols/prescriptions
+      match /prescriptions/{prescriptionId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+
+      // User learned corrections (Abbreviations)
+      match /corrections/{correctionId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+    }
+  }
+}

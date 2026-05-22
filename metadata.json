@@ -1,0 +1,6 @@
+{
+  "name": "Medassist",
+  "description": "Auxiliar hospitalar inteligente para extrair, organizar e formatar exames médicos de textos brutos colados diretamente para o prontuário do paciente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

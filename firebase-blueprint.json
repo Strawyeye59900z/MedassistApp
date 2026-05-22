@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "Correction": {
+      "title": "Label Correction",
+      "description": "User specific shorthand/abbreviation preference for an exam label.",
+      "type": "object",
+      "properties": {
+        "original": { "type": "string", "description": "The original label from AI extraction." },
+        "shorthand": { "type": "string", "description": "The user's preferred shorthand for this label." },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["original", "shorthand", "updatedAt"]
+    },
+    "AppSettings": {
+      "title": "User Settings",
+      "description": "General application settings for the user.",
+      "type": "object",
+      "properties": {
+        "separator": { "type": "string" },
+        "capsLock": { "type": "boolean" },
+        "theme": { "type": "string" },
+        "accentTone": { "type": "string" },
+        "geminiApiKey": { "type": "string" }
+      }
+    },
+    "HistoryItem": {
+      "title": "Transcription History",
+      "description": "Historical record of an exam transcription.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "patientName": { "type": "string" },
+        "rawInput": { "type": "string" },
+        "parsedData": { "type": "object" },
+        "formattedText": { "type": "string" }
+      }
+    },
+    "Note": {
+      "title": "Clinical Note",
+      "description": "Admission note or patient record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "ward": { "type": "string" },
+        "room": { "type": "string" }
+      }
+    },
+    "Prescription": {
+      "title": "Protocol",
+      "description": "Clinical protocol or prescription template.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "system": { "type": "string" },
+        "condition": { "type": "string" },
+        "title": { "type": "string" },
+        "items": { "type": "array" },
+        "contraindications": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "UserRecord": {
+      "title": "Registered User",
+      "description": "Information about a user registered with email/password.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users_registered/{userId}": {
+      "schema": "UserRecord",
+      "description": "Directory of all registered user accounts."
+    },
+    "/users/{userId}": {
+      "schema": "AppSettings",
+      "description": "Root user settings document."
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "HistoryItem",
+      "description": "List of previous exam transcriptions."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Clinical admission notes."
+    },
+    "/users/{userId}/prescriptions/{prescriptionId}": {
+      "schema": "Prescription",
+      "description": "Custom or AI-extracted clinical protocols."
+    },
+    "/users/{userId}/corrections/{correctionId}": {
+      "schema": "Correction",
+      "description": "User learned abbreviation mappings (e.g. Bilirrubina Total -> BT)."
+    }
+  }
+}
