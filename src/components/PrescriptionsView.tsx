@@ -125,6 +125,18 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   const [progressStep, setProgressStep] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isPastingText, setIsPastingText] = useState(false);
+  const [pastedText, setPastedText] = useState("");
+
+  const handleTextSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pastedText.trim()) return;
+    setUploadError(null);
+    setIsProcessing(true);
+    await startExtraction(undefined, pastedText.trim());
+    setPastedText("");
+    setIsPastingText(false);
+  };
 
   const isDark = settings.theme === "dark-emerald" || settings.theme === "midnight";
 
@@ -304,25 +316,34 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
     reader.readAsDataURL(file);
   };
 
-  // Envia base64 para a API do backend
-  const startExtraction = async (base64Pdf: string) => {
-    setProgressStep("Conectando com o servidor...");
+  // Envia dados para a API do backend (PDF ou Texto)
+  const startExtraction = async (base64Pdf?: string, rawText?: string) => {
+    setProgressStep("Conectando com o servidor de IA...");
     try {
       if (!settings.geminiApiKey?.trim()) {
         throw new Error("Sua Chave de API do Gemini não está cadastrada. Por favor, adicione-a nas Configurações (ícone de engrenagem) ou insira no primeiro acesso.");
       }
 
-      setProgressStep("Gemini lendo o PDF (isso pode levar de 15 a 35 segundos dependendo do tamanho)...");
+      if (rawText) {
+        setProgressStep("Gemini estruturando as informações clínicas e medicamentos (15 a 30 segundos)...");
+      } else {
+        setProgressStep("Gemini realizando leitura do PDF clínico (para PDFs grandes, isso pode levar de 20 a 50 segundos)...");
+      }
+
       const res = await fetch("/api/parse-prescriptions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Gemini-Key": settings.geminiApiKey || ""
         },
-        body: JSON.stringify({ pdfBase64: base64Pdf })
+        body: JSON.stringify({ pdfBase64: base64Pdf, rawText })
       });
 
       if (!res.ok) {
+        // Trata timeout do Cloudflare 524 de forma amigável
+        if (res.status === 524) {
+          throw new Error("Erro de limite de tempo (Cloudflare Timeout 524). O PDF enviado é muito grande ou denso, fazendo com que a análise completa da IA demore mais de 100 segundos. Para resolver, clique no botão 'Importar via Texto' abaixo e cole apenas as condutas principais, ou divida o PDF em arquivos menores (com no máximo 2 a 3 páginas).");
+        }
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Erro de resposta do servidor (${res.status}).`);
       }
@@ -331,7 +352,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
       const result = await res.json();
 
       if (!result.prescriptions || !Array.isArray(result.prescriptions)) {
-        throw new Error("A IA retornou um formato inesperado. Tente novamente com outro PDF de condutas claras.");
+        throw new Error("A IA retornou um formato inesperado. Tente novamente com outro PDF ou texto de condutas claras.");
       }
 
       setProgressStep(`Salvando ${result.prescriptions.length} condutas processadas no Firestore seguro...`);
@@ -341,7 +362,7 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
       setIsProcessing(false);
     } catch (err: any) {
       console.error(err);
-      setUploadError(err.message || "Ocorreu um erro ao processar o seu PDF de condutas.");
+      setUploadError(err.message || "Ocorreu um erro ao processar as condutas.");
       setIsProcessing(false);
     }
   };
@@ -622,25 +643,86 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
             </p>
           </div>
 
-          {/* Upload Zone Button Card */}
-          <div className={`w-full lg:max-w-md ${isDark ? "bg-slate-900 hover:bg-slate-800 border-slate-700" : "bg-slate-50 hover:bg-slate-100/70 border-slate-200"} border-2 border-dashed hover:border-emerald-400 rounded-2xl p-6 text-center transition-all relative flex flex-col justify-center items-center`}>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handlePdfUpload}
-              accept="application/pdf"
-              className="hidden"
-            />
-            
-            <div className="space-y-3 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-              <div className={`w-11 h-11 rounded-xl shadow-sm flex items-center justify-center mx-auto ${isDark ? "bg-slate-800 text-emerald-400" : "bg-white text-emerald-600"}`}>
-                <Upload className="w-5 h-5" />
-              </div>
-              <div>
-                <span className={`block text-xs font-bold ${themeClasses.text}`}>Escolha ou arraste o seu PDF clínico</span>
-                <span className={`block text-[10px] mt-0.5 ${themeClasses.subText}`}>Suporta PDFs normais ou institucionais até 40MB</span>
-              </div>
+          {/* Upload and Paste Zone Selector */}
+          <div className="flex flex-col gap-4 w-full lg:max-w-md">
+            {/* Segmented Control / Tab Switcher */}
+            <div className={`p-1 rounded-xl flex ${isDark ? "bg-slate-950/80 border border-slate-800" : "bg-slate-100/80 border border-slate-200"}`}>
+              <button
+                type="button"
+                onClick={() => setIsPastingText(false)}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  !isPastingText
+                    ? isDark ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40" : "bg-white text-slate-800 shadow-sm border border-slate-200"
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Importar PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPastingText(true)}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  isPastingText
+                    ? isDark ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40" : "bg-white text-slate-800 shadow-sm border border-slate-200"
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Copiar e Colar Texto
+              </button>
             </div>
+
+            {!isPastingText ? (
+              <div className={`w-full ${isDark ? "bg-slate-900/60 hover:bg-slate-800/80 border-slate-800" : "bg-slate-50 hover:bg-slate-100/70 border-slate-200"} border-2 border-dashed hover:border-emerald-400 rounded-2xl p-6 text-center transition-all relative flex flex-col justify-center items-center min-h-[140px]`}>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handlePdfUpload}
+                  accept="application/pdf"
+                  className="hidden"
+                />
+                
+                <div className="space-y-3 cursor-pointer w-full" onClick={() => fileInputRef.current?.click()}>
+                  <div className={`w-11 h-11 rounded-xl shadow-sm flex items-center justify-center mx-auto ${isDark ? "bg-slate-800 text-emerald-400" : "bg-white text-emerald-600"}`}>
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className={`block text-xs font-bold ${themeClasses.text}`}>Escolha ou arraste o seu PDF clínico</span>
+                    <span className={`block text-[10px] mt-0.5 ${themeClasses.subText}`}>Suporta PDFs normais ou institucionais até 40MB</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleTextSubmit} className="space-y-3">
+                <textarea
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="Cole aqui o texto ou trecho do PDF que deseja processar...&#10;&#10;Exemplo:&#10;DIRETRIZ DE ASMA NO PRONTO SOCORRO&#10;- Se leve: dar aerossol de Fenoterol 10 gotas + ipratrópio..."
+                  className={`w-full min-h-[140px] p-3 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium ${themeClasses.input}`}
+                  required
+                />
+                
+                <div className="flex justify-end gap-2">
+                  {pastedText && (
+                    <button
+                      type="button"
+                      onClick={() => setPastedText("")}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border ${isDark ? "border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200" : "border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-800"} cursor-pointer`}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold ${themeClasses.primaryBtn} flex items-center gap-1.5 cursor-pointer`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Processar Texto de Conduta
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
 
