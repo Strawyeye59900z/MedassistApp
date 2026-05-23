@@ -29,12 +29,6 @@ export default function PresetsTab({ currentUser, settings, onApplyPreset, curre
           pList.push({ ...data, id: docSnap.id });
         });
 
-        if (pList.length === 0 && isAdmin) {
-          // Seed initial presets only once if totally empty
-          INITIAL_PRESETS.forEach((preset) => {
-            setDoc(doc(db, "presets", preset.id), preset);
-          });
-        }
         setPresets(pList.length > 0 ? pList : INITIAL_PRESETS);
       },
       (error) => {
@@ -42,7 +36,7 @@ export default function PresetsTab({ currentUser, settings, onApplyPreset, curre
       }
     );
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, []);
 
   return (
     <div className="space-y-8 animate-fade-in">

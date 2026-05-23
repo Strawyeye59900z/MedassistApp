@@ -11,7 +11,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.token.email == "gabriel.nunez.costa@gmail.com";
+      return isSignedIn() && 
+        "email" in request.auth.token && 
+        request.auth.token.email.lower() == "gabriel.nunez.costa@gmail.com";
     }
 
     function isOwnerOrAdmin(userId) {
