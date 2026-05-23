@@ -29,37 +29,23 @@ service cloud.firestore {
 
     // Presets collection (Public read, Admin write)
     match /presets/{presetId} {
-      allow list, get: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // Registered Users Directory (for Admin & self check)
     match /users_registered/{userId} {
-      allow get, create: if isSignedIn();
-      allow list, update, delete: if isOwnerOrAdmin(userId);
+      allow create: if isSignedIn();
+      allow get: if isOwnerOrAdmin(userId);
+      allow list, update, delete: if isAdmin();
     }
 
     // User settings and data
     match /users/{userId} {
       allow get, create, update: if isOwnerOrAdmin(userId);
 
-      // History of transcriptions
-      match /history/{historyId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      // Clinical notes
-      match /notes/{noteId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      // Clinical protocols/prescriptions
-      match /prescriptions/{prescriptionId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      // User learned corrections (Abbreviations)
-      match /corrections/{correctionId} {
+      // Recursive match for all sub-collections of user
+      match /{allSubcollections=**} {
         allow read, write: if isOwnerOrAdmin(userId);
       }
     }
