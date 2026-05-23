@@ -11,9 +11,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && 
-        "email" in request.auth.token && 
-        request.auth.token.email.lower() == "gabriel.nunez.costa@gmail.com";
+      return isSignedIn() && (
+        ("email" in request.auth.token && request.auth.token.email == "gabriel.nunez.costa@gmail.com") ||
+        (exists(/databases/$(database)/documents/users_registered/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users_registered/$(request.auth.uid)).data.email == "gabriel.nunez.costa@gmail.com")
+      );
     }
 
     function isOwnerOrAdmin(userId) {
@@ -44,7 +46,7 @@ service cloud.firestore {
 
     // User settings and data
     match /users/{userId} {
-      allow get, create, update: if isOwnerOrAdmin(userId);
+      allow get, create, update, delete: if isOwnerOrAdmin(userId);
 
       // Recursive match for all sub-collections of user
       match /{allSubcollections=**} {
