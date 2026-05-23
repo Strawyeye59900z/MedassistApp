@@ -208,8 +208,7 @@ export default function App() {
 
       await setDoc(corrRef, correctionData);
     } catch (err) {
-      // Silent fail for corrections as it's a background helper
-      console.error("Failed to save correction:", err);
+      handleFirestoreError(err, OperationType.CREATE, `users/${currentUser.uid}/corrections`);
     }
   };
 
@@ -964,7 +963,11 @@ export default function App() {
               </div>
             ) : (
               <div className="animate-fade-in mt-4">
-                <AdminUsersView themeStyles={themeClasses} />
+                <AdminUsersView 
+                  themeStyles={themeClasses} 
+                  currentUser={currentUser}
+                  settings={settings}
+                />
               </div>
             )}
         </>

@@ -63,6 +63,17 @@
         "timestamp": { "type": "string", "format": "date-time" }
       }
     },
+    "LibraryPreset": {
+      "title": "Library Preset",
+      "description": "Admin created library presets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "prescriptions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "UserRecord": {
       "title": "Registered User",
       "description": "Information about a user registered with email/password.",
@@ -95,6 +106,10 @@
     "/users/{userId}/prescriptions/{prescriptionId}": {
       "schema": "Prescription",
       "description": "Custom or AI-extracted clinical protocols."
+    },
+    "/presets/{presetId}": {
+      "schema": "LibraryPreset",
+      "description": "Public library presets created by admin."
     },
     "/users/{userId}/corrections/{correctionId}": {
       "schema": "Correction",

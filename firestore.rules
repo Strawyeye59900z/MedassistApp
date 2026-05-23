@@ -10,8 +10,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "gabriel.nunez.costa@gmail.com";
+    }
+
     function isOwnerOrAdmin(userId) {
-      return isSignedIn() && (request.auth.uid == userId || request.auth.token.email == "gabriel.nunez.costa@gmail.com");
+      return isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
     function isValidId(id) {
@@ -23,10 +27,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Presets collection (Public read, Admin write)
+    match /presets/{presetId} {
+      allow list, get: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Registered Users Directory (for Admin & self check)
     match /users_registered/{userId} {
       allow get, create: if isSignedIn();
-      allow list, update, delete: if isSignedIn() && (request.auth.uid == userId || request.auth.token.email == "gabriel.nunez.costa@gmail.com");
+      allow list, update, delete: if isOwnerOrAdmin(userId);
     }
 
     // User settings and data

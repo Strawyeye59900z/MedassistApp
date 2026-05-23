@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Trash2, Clipboard, Upload, Search, Check, AlertTriangle, FileText, Info, Sparkles, RefreshCw, X, HelpCircle, Loader2, ChevronDown, ChevronRight, Plus, Pencil, Save } from "lucide-react";
+import { Trash2, Clipboard, Upload, Search, Check, AlertTriangle, FileText, Info, Sparkles, RefreshCw, X, HelpCircle, Loader2, ChevronDown, ChevronRight, Plus, Pencil, Save, Copy } from "lucide-react";
 import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, writeBatch, updateDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import { User } from "firebase/auth";
 import { Prescription, AppSettings } from "../types";
+import PresetsTab from "./PresetsTab";
 
 // Limpa e padroniza os nomes dos sistemas (remove a palavra "sistema" do início)
 const formatSystemName = (sys: string): string => {
@@ -129,6 +130,7 @@ const MOCK_DEMO_PRESCRIPTIONS: Omit<Prescription, "id" | "timestamp">[] = [
 
 export default function PrescriptionsView({ currentUser, settings }: PrescriptionsViewProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [activeTab, setActiveTab] = useState<'prescriptions' | 'presets'>('prescriptions');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -157,18 +159,54 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStep, setProgressStep] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const [totalPdfPages, setTotalPdfPages] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isPastingText, setIsPastingText] = useState(false);
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
+  const [isPastingText, setIsPastingText] = useState(false);
+  const isAdmin = currentUser?.email === "gabriel.nunez.costa@gmail.com";
+
+  const getExtractionPrompt = () => {
+    let prompt = `Atue como um especialista em sumarização médica e extração de dados clínicos. Analise ATENTAMENTE TODAS AS ${totalPdfPages ? totalPdfPages + " " : ""}PÁGINAS do documento de diretrizes ou protocolo clínico anexado, sem pular nenhuma seção. Sua tarefa é extrair e estruturar todas as prescrições, condutas, medicamentos e monitoramentos de forma organizada. Formato de saída DEVE ser estritamente um JSON contendo uma chave raiz "prescriptions". Cada objeto deve ter: "system", "condition", "title", "contraindications", e "items" (array de objetos com "conditionGroup" e "text"). Garanta que TODOS os protocolos presentes no documento, especialmente nas ${totalPdfPages ? totalPdfPages + " páginas informadas" : "todas as páginas"}, sejam incluídos. NÃO divida itens de prescrição isoladamente. Agrupe todos os itens daquela DOENÇA/PROCEDIMENTO dentro do mesmo card.`;
+    return prompt;
+  };
+
+  const currentPrompt = getExtractionPrompt();
+
+  const handleCopyPrompt = () => {
+    navigator.clipboard.writeText(currentPrompt).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
+  };
 
   const handleTextSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pastedText.trim()) return;
     setUploadError(null);
     setIsProcessing(true);
-    await startExtraction(undefined, pastedText.trim());
+    
+    // Check if input is already JSON
+    try {
+      const parsed = JSON.parse(pastedText.trim());
+      if (parsed.prescriptions && Array.isArray(parsed.prescriptions)) {
+        // Direct save as it is already in JSON format
+        setProgressStep("Integrando JSON estruturado diretamente...");
+        await saveParsedPrescriptions(parsed.prescriptions);
+        setProgressStep("Concluído!");
+      } else {
+        // Fallback to extraction if not adhering to expected JSON structure
+        await startExtraction(undefined, pastedText.trim());
+      }
+    } catch (e) {
+      // Not JSON, assume raw text
+      await startExtraction(undefined, pastedText.trim());
+    }
+    
     setPastedText("");
     setIsPastingText(false);
+    setIsProcessing(false);
   };
 
   const isDark = settings.theme === "dark-emerald" || settings.theme === "midnight";
@@ -783,137 +821,126 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
   }, [filteredPrescriptions]);
 
   return (
-    <div className={`space-y-6 max-w-7xl mx-auto ${isDark ? "text-slate-100" : "text-slate-800"}`}>
-      {/* Dashboard Top Panel with PDF Upload Zone */}
-      <div className={`rounded-3xl border ${themeClasses.card} p-6 sm:p-8`}>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <div className="flex items-center space-x-2">
-              <span className={`p-2 rounded-xl ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
-                <FileText className="w-5 h-5" />
-              </span>
-              <h1 className={`text-lg font-bold ${themeClasses.text}`}>Biblioteca Particular de Prescrições</h1>
-            </div>
-            <p className={`text-xs leading-relaxed md:pr-4 ${themeClasses.subText}`}>
-              Crie condutas organizadas para o seu dia a dia clínico. Faça o upload de um arquivo **PDF com condutas ou diretrizes do seu hospital** para popular este Dashboard usando inteligência artificial de alta velocidade. A IA separará medicamentos, agrupará por sistemas clínicos, mapeará condicionais importantes e consolidará contraindicações de segurança de cada conduta.
-            </p>
-          </div>
-
-          {/* Upload and Paste Zone Selector */}
-          <div className="flex flex-col gap-4 w-full lg:max-w-md">
-            {/* Segmented Control / Tab Switcher */}
-            <div className={`p-1 rounded-xl flex ${isDark ? "bg-slate-950/80 border border-slate-800" : "bg-slate-100/80 border border-slate-200"}`}>
-              <button
-                type="button"
-                onClick={() => setIsPastingText(false)}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  !isPastingText
-                    ? isDark ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40" : "bg-white text-slate-800 shadow-sm border border-slate-200"
-                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Importar PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsPastingText(true)}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  isPastingText
-                    ? isDark ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40" : "bg-white text-slate-800 shadow-sm border border-slate-200"
-                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Copiar e Colar Texto
-              </button>
-            </div>
-
-            {!isPastingText ? (
-              <div className={`w-full ${isDark ? "bg-slate-900/60 hover:bg-slate-800/80 border-slate-800" : "bg-slate-50 hover:bg-slate-100/70 border-slate-200"} border-2 border-dashed hover:border-emerald-400 rounded-2xl p-6 text-center transition-all relative flex flex-col justify-center items-center min-h-[140px]`}>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handlePdfUpload}
-                  accept="application/pdf"
-                  className="hidden"
-                />
-                
-                <div className="space-y-3 cursor-pointer w-full" onClick={() => fileInputRef.current?.click()}>
-                  <div className={`w-11 h-11 rounded-xl shadow-sm flex items-center justify-center mx-auto ${isDark ? "bg-slate-800 text-emerald-400" : "bg-white text-emerald-600"}`}>
-                    <Upload className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className={`block text-xs font-bold ${themeClasses.text}`}>Escolha ou arraste o seu PDF clínico</span>
-                    <span className={`block text-[10px] mt-0.5 ${themeClasses.subText}`}>Suporta PDFs normais ou institucionais até 40MB</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleTextSubmit} className="space-y-3">
-                <textarea
-                  value={pastedText}
-                  onChange={(e) => setPastedText(e.target.value)}
-                  placeholder="Cole aqui o texto ou trecho do PDF que deseja processar...&#10;&#10;Exemplo:&#10;DIRETRIZ DE ASMA NO PRONTO SOCORRO&#10;- Se leve: dar aerossol de Fenoterol 10 gotas + ipratrópio..."
-                  className={`w-full min-h-[140px] p-3 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium ${themeClasses.input}`}
-                  required
-                />
-                
-                <div className="flex justify-end gap-2">
-                  {pastedText && (
-                    <button
-                      type="button"
-                      onClick={() => setPastedText("")}
-                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border ${isDark ? "border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200" : "border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-800"} cursor-pointer`}
-                    >
-                      Limpar
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold ${themeClasses.primaryBtn} flex items-center gap-1.5 cursor-pointer`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Processar Texto de Conduta
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+    <div className={isDark ? "space-y-12 max-w-7xl mx-auto pb-20 text-slate-100" : "space-y-12 max-w-7xl mx-auto pb-20 text-slate-800"}>
+      <div className={isDark ? "flex items-center justify-between border-b border-slate-800" : "flex items-center justify-between border-b border-slate-200"}>
+        <div className="flex">
+          <button 
+            onClick={() => setActiveTab('prescriptions')} 
+            className={`px-6 py-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${activeTab === 'prescriptions' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <FileText className="w-4 h-4" />
+            Minha Biblioteca
+          </button>
+          <button 
+            onClick={() => setActiveTab('presets')} 
+            className={`px-6 py-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${activeTab === 'presets' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Bibliotecas Predefinidas
+          </button>
         </div>
-
-        {/* Progress feedback for extraction process */}
-        {isProcessing && (
-          <div className="mt-6 p-5 bg-emerald-50/50 border border-emerald-150 rounded-2xl animate-pulse space-y-3">
-            <div className="flex items-center space-x-3 text-xs font-bold text-emerald-800">
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-              <span>Gerando Dashboard Clinico com IA...</span>
-            </div>
-            <p className="text-xs text-emerald-600 font-mono italic pl-7">{progressStep}</p>
-            <div className="w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
-              <div className={`h-1.5 rounded-full transition-all duration-500 ${themeClasses.progress} w-3/4`} />
-            </div>
-          </div>
-        )}
-
-        {/* Upload and analysis error display */}
-        {uploadError && (
-          <div className="mt-6 p-4 bg-rose-50 border border-rose-150 rounded-2xl text-xs text-rose-700 font-semibold space-y-1 relative">
-            <button 
-              onClick={() => setUploadError(null)}
-              className="absolute right-3 top-3 text-rose-400 hover:text-rose-600"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
-              <span>Erro de Processamento</span>
-            </div>
-            <p className="pl-6 text-[11px] leading-relaxed text-rose-600">{uploadError}</p>
-          </div>
-        )}
       </div>
 
+      {activeTab === 'presets' ? (
+        <PresetsTab 
+          currentUser={currentUser} 
+          settings={settings} 
+          currentPrescriptions={prescriptions}
+          onApplyPreset={async (p) => { 
+            await saveParsedPrescriptions(p); 
+            setActiveTab('prescriptions'); 
+          }} 
+        />
+      ) : (
+        <div className="space-y-12 animate-fade-in">
+          {/* AI Helper Section */}
+          <div className={`p-8 rounded-3xl border ${isDark ? "bg-slate-900/40 border-slate-800" : "bg-white border-slate-200"} space-y-6 shadow-sm`}>
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
+              <div className="space-y-3 max-w-2xl">
+                <div className="flex items-center space-x-2">
+                  <div className={`p-2 rounded-xl ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-lg font-bold">Assistente de Alimentação com IA</h2>
+                </div>
+                <p className={`text-xs leading-relaxed ${themeClasses.subText}`}>
+                  Alimente sua biblioteca clínica em segundos. Use nosso prompt otimizado para extrair protocolos de PDFs institucionais ou textos de diretrizes utilizando o Google Gemini.
+                </p>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button 
+                    onClick={() => setIsPromptModalOpen(true)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${isDark ? "bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950/20" : "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100"}`}
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copiar Prompt de Extração
+                  </button>
+                  <a 
+                    href="https://aistudio.google.com/app/prompts/new" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${isDark ? "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"}`}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Abrir Google AI Studio
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4 w-full lg:max-w-md">
+                <form onSubmit={handleTextSubmit} className="space-y-3">
+                  <div className="relative">
+                    <textarea
+                      value={pastedText}
+                      onChange={(e) => setPastedText(e.target.value)}
+                      placeholder="Cole aqui o resultado JSON gerado pelo Gemini..."
+                      className={`w-full min-h-[120px] p-4 text-xs border rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all font-medium leading-relaxed ${themeClasses.input}`}
+                      required
+                    />
+                    {isProcessing && (
+                      <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-[1px] rounded-2xl flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{progressStep || "Processando..."}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex justify-end gap-2">
+                    {pastedText && !isProcessing && (
+                      <button
+                        type="button"
+                        onClick={() => setPastedText("")}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-bold border ${isDark ? "border-slate-800 hover:bg-slate-800 text-slate-400" : "border-slate-200 hover:bg-slate-100 text-slate-500"}`}
+                      >
+                        Limpar
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isProcessing}
+                      className={`px-6 py-2 rounded-xl text-xs font-bold ${themeClasses.primaryBtn} flex items-center gap-2 disabled:opacity-50`}
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      Integrar Condutas
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {uploadError && (
+              <div className="p-4 bg-rose-50 border border-rose-150 rounded-2xl text-xs text-rose-700 font-semibold flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span>{uploadError}</span>
+                </div>
+                <button onClick={() => setUploadError(null)} className="text-rose-400 hover:text-rose-600 p-1">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
       {/* Database control metrics & filters */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Search Input Filter */}
@@ -930,6 +957,14 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
 
         {/* Core Controls: Collapsible state selectors & Empty DB Seed Trigger or Wipe */}
         <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => setActiveTab('presets')}
+            className={`text-[11px] font-bold px-3.5 py-2.5 rounded-xl border cursor-pointer border-amber-500/20 text-amber-600 hover:bg-amber-500/10 transition-all text-center flex items-center gap-1.5 shadow-sm ${isDark ? "bg-amber-500/5" : "bg-amber-50/50"}`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Bibliotecas Predefinidas</span>
+          </button>
+
           {prescriptions.length > 0 && (
             <button
               onClick={handleOpenCreateModal}
@@ -1191,6 +1226,77 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
             );
           })}
         </div>
+    )}
+
+      {/* Prompt Modal Overlay */}
+      {isPromptModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md animate-fade-in" onClick={() => setIsPromptModalOpen(false)} />
+          <div className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-8 space-y-6 animate-scale-in border ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+            <div className="flex items-center justify-between border-b pb-4 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600"}`}>
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold">Prompt de Extração IA</h3>
+                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Configure seu prompt para o Gemini</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsPromptModalOpen(false)}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight ml-1">Total de páginas da referência:</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  placeholder="Ex: 5 páginas" 
+                  autoFocus
+                  className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-bold ${themeClasses.input}`} 
+                  onChange={(e) => setTotalPdfPages(Number(e.target.value))} 
+                  value={totalPdfPages || ""}
+                />
+              </div>
+
+              <div className={`p-4 rounded-2xl text-[10px] ${isDark ? "bg-slate-950/50 text-slate-400" : "bg-slate-100 text-slate-600"} font-mono overflow-auto max-h-40 leading-relaxed border border-slate-200/10`}>
+                {currentPrompt}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {totalPdfPages ? (
+                <button
+                  onClick={() => {
+                    handleCopyPrompt();
+                    setIsPromptModalOpen(false);
+                  }}
+                  className={`w-full py-3.5 rounded-xl text-xs font-bold ${themeClasses.primaryBtn} flex items-center justify-center gap-2 transform active:scale-95 transition-all`}
+                >
+                  <Copy className="w-4 h-4" />
+                  Copiar Prompt Gerado
+                </button>
+              ) : (
+                <div className="py-3 px-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-600 font-bold text-center">
+                  Informe o total de páginas para habilitar a cópia
+                </div>
+              )}
+              
+              <button
+                onClick={() => setIsPromptModalOpen(false)}
+                className={`w-full py-3 rounded-xl text-xs font-bold border ${isDark ? "border-slate-800 text-slate-400 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Manual Creation/Edit Modal Overlay */}
@@ -1360,6 +1466,8 @@ export default function PrescriptionsView({ currentUser, settings }: Prescriptio
       <datalist id="groups-list">
         {autocompleteData.groups.map(group => <option key={group} value={group} />)}
       </datalist>
+    </div>
+    )}
     </div>
   );
 }
